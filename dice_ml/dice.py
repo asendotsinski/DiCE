@@ -29,7 +29,13 @@ class Dice(ExplainerBase):
                     'Private data interface is not supported with kdtree explainer'
                     ' since kdtree explainer needs access to entire training data')
         self.__class__ = decide(model_interface, method)
-        self.__init__(data_interface, model_interface, **kwargs)
+        try:
+            self.__init__(data_interface, model_interface, **kwargs)
+        except TypeError:
+            model_class = decide_gradient(model_interface)
+            model_class(data_interface, model_interface, **kwargs)
+            # the class is probably a wrapper that expects a gradient model as parameter
+            self.__init__(decide_gradient(model_interface), data_interface, model_interface)
 
     def _generate_counterfactuals(self, query_instance, total_CFs,
                                   desired_class="opposite", desired_range=None,
@@ -58,30 +64,10 @@ def decide(model_interface, method):
         from dice_ml.explainer_interfaces.dice_KD import DiceKD
         return DiceKD
     elif method == SamplingStrategy.Gradient:
-        if model_interface.backend == BackEndTypes.Tensorflow1:
-            # pretrained Keras Sequential model with Tensorflow 1.x backend
-            from dice_ml.explainer_interfaces.dice_tensorflow1 import \
-                DiceTensorFlow1
-            return DiceTensorFlow1
-
-        elif model_interface.backend == BackEndTypes.Tensorflow2:
-            # pretrained Keras Sequential model with Tensorflow 2.x backend
-            from dice_ml.explainer_interfaces.dice_tensorflow2 import \
-                DiceTensorFlow2
-            return DiceTensorFlow2
-
-        elif model_interface.backend == BackEndTypes.Pytorch:
-            # PyTorch backend
-            from dice_ml.explainer_interfaces.dice_pytorch import DicePyTorch
-            return DicePyTorch
-        else:
-            raise UserConfigValidationException(
-                    "{0} is only supported for differentiable neural network models. "
-                    "Please choose one of {1}, {2} or {3}".format(
-                        method, SamplingStrategy.Random,
-                        SamplingStrategy.Genetic,
-                        SamplingStrategy.KdTree
-                    ))
+        return decide_gradient(model_interface)
+    elif method == SamplingStrategy.GradientLinearDependency:
+        from dice_ml.explainer_interfaces.linear_dependency_wrapper import LinearDependencyWrapper
+        return LinearDependencyWrapper
     elif method is None:
         # all other backends
         backend_dice = model_interface.backend['explainer']
@@ -95,3 +81,29 @@ def decide(model_interface, method):
                                                 SamplingStrategy.Genetic,
                                                 SamplingStrategy.KdTree
                                             ))
+
+def decide_gradient(model_interface):
+    if model_interface.backend == BackEndTypes.Tensorflow1:
+        # pretrained Keras Sequential model with Tensorflow 1.x backend
+        from dice_ml.explainer_interfaces.dice_tensorflow1 import \
+            DiceTensorFlow1
+        return DiceTensorFlow1
+
+    elif model_interface.backend == BackEndTypes.Tensorflow2:
+        # pretrained Keras Sequential model with Tensorflow 2.x backend
+        from dice_ml.explainer_interfaces.dice_tensorflow2 import \
+            DiceTensorFlow2
+        return DiceTensorFlow2
+
+    elif model_interface.backend == BackEndTypes.Pytorch:
+        # PyTorch backend
+        from dice_ml.explainer_interfaces.dice_pytorch import DicePyTorch
+        return DicePyTorch
+    else:
+        raise UserConfigValidationException(
+                "{0} is only supported for differentiable neural network models. "
+                "Please choose one of {1}, {2} or {3}".format(
+                    method, SamplingStrategy.Random,
+                    SamplingStrategy.Genetic,
+                    SamplingStrategy.KdTree
+                ))
